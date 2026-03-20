@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>原反 QR 照合</title>
+
+<!-- QR読み取り -->
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<!-- Excel(xlsx)読み取り -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #f5f7fb;
+  padding: 20px;
+}
+
+/* 見出し */
+h2 {
+  color: #333;
+  margin-bottom: 15px;
+}
+
+/* 全体レイアウト */
+.layout {
+  display: flex;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+/* 左側（操作系） */
+.left {
+  width: 360px;
+}
+
+/* 右側（リスト） */
+.right {
+  flex: 1;
+}
+
+/* ファイル選択（大きく） */
+.file-input {
+  width: 100%;
+  font-size: 18px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: white;
+  cursor: pointer;
+  margin-bottom: 15px;
+}
+
+/* QRリーダー（少し小さく） */
+#reader {
+  width: 280px;
+  padding: 8px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  margin-bottom: 10px;
+}
+
+/* 読み取り表示 */
+#qrText {
+  font-weight: 600;
+  color: #333;
+}
+
+/* メッセージ */
+#message {
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* テーブル */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+th {
+  background: #4f6df5;
+  color: white;
+  font-weight: 600;
+  padding: 10px;
+}
+
+td {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.pending {
+  background: #fafafa;
+}
+
+.done {
+  background: #e6f8ea;
+  color: #1b7f3b;
+  font-weight: 600;
+}
+</style>
+</head>
+
+<body>
+
+<h2>原反 QR 照合</h2>
+
+<div class="layout">
+
+  <!-- 左側 -->
+  <div class="left">
+    <input type="file" id="excelFile" class="file-input" accept=".xlsx,.xlsm">
+
+    <div id="reader"></div>
+
+    <p>読み取ったQR：<span id="qrText">未読込</span></p>
+    <div id="message"></div>
+  </div>
+
+  <!-- 右側 -->
+  <div class="right">
+    <table>
+      <thead>
+        <tr>
+          <th>番号</th>
+          <th>内容</th>
+          <th>状態</th>
+        </tr>
+      </thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+let rows = [];
+let scanned = new Set();
+
+const tbody = document.getElementById("list");
+const messageEl = document.getElementById("message");
+const qrTextEl = document.getElementById("qrText");
+
+/* Excel読み込み */
+document.getElementById("excelFile").addEventListener("change", e => {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
+    const sheet = wb.Sheets["QRコードリスト"];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    rows = data
+      .filter(r => r[0] && r[1])
+      .map(r => ({ a: r[0], b: r[1], done: false }));
+
+    scanned.clear();
+    messageEl.textContent = "";
+    qrTextEl.textContent = "未読込";
+    render();
+  };
+  reader.readAsArrayBuffer(e.target.files[0]);
+});
+
+/* 表示更新 */
+function render() {
+  tbody.innerHTML = "";
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.className = r.done ? "done" : "pending";
+    tr.innerHTML = `
+      <td>${r.a}</td>
+      <td>${r.b}</td>
+      <td>${r.done ? "✅ 完了" : "⏳ 未取得"}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (rows.length > 0 && rows.every(r => r.done)) {
+    messageEl.textContent = "🎉 全ての原反照合が完了しました";
+    messageEl.style.color = "green";
+  }
+}
+
+/* QR読み取り */
+const qr = new Html5Qrcode("reader");
+qr.start(
+  { facingMode: "environment" },
+  { fps: 10 },
+  text => {
+    qrTextEl.textContent = text;
+
+    if (scanned.has(text)) return;
+
+    const hit = rows.find(r => r.b === text && !r.done);
+    if (hit) {
+      hit.done = true;
+      scanned.add(text);
+      messageEl.textContent = "";
+      render();
+    } else {
+      messageEl.textContent = "❌ 一致しません";
+      messageEl.style.color = "red";
+    }
+  }
+);
+</script>
+
+</body>
+</html>
